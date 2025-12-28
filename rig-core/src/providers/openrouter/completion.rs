@@ -125,13 +125,15 @@ pub struct Choice {
     pub finish_reason: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(untagged, rename_all = "snake_case")]
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ToolChoice {
     None,
+    #[default]
     Auto,
     Required,
-    Function(Vec<ToolChoiceFunctionKind>),
+    #[serde(untagged)]
+    Function(ToolChoiceFunctionKind),
 }
 
 impl TryFrom<crate::message::ToolChoice> for ToolChoice {
@@ -148,7 +150,12 @@ impl TryFrom<crate::message::ToolChoice> for ToolChoice {
                     .map(|name| ToolChoiceFunctionKind::Function { name })
                     .collect();
 
-                Self::Function(vec)
+                if vec.len() != 1 {
+                    return Err(CompletionError::ProviderError(
+                        "OpenRouter requires exactly one tool choice".to_string(),
+                    ));
+                }
+                Self::Function(vec.into_iter().next().unwrap())
             }
         };
 
@@ -157,7 +164,7 @@ impl TryFrom<crate::message::ToolChoice> for ToolChoice {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "type", content = "function")]
+#[serde(tag = "type", rename_all = "snake_case", content = "function")]
 pub enum ToolChoiceFunctionKind {
     Function { name: String },
 }
@@ -228,7 +235,9 @@ impl<T> CompletionModel<T> {
                     .map(crate::providers::openai::completion::ToolDefinition::from)
                     .collect::<Vec<_>>()
             );
-            request["tool_choice"] = json!(tool_choice);
+            if let Some(tool_choice) = tool_choice {
+                request["tool_choice"] = json!(tool_choice);
+            }
         }
 
         let request = if let Some(params) = completion_request.additional_params {

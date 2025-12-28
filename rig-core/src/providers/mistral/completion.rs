@@ -259,6 +259,7 @@ pub struct CompletionModel<T = reqwest::Client> {
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ToolChoice {
     #[default]
     Auto,
@@ -319,11 +320,6 @@ impl<T> CompletionModel<T> {
                 .collect::<Vec<_>>(),
         );
 
-        let tool_choice = completion_request
-            .tool_choice
-            .map(ToolChoice::try_from)
-            .transpose()?;
-
         let request = if completion_request.tools.is_empty() {
             json!({
                 "model": self.model,
@@ -335,8 +331,14 @@ impl<T> CompletionModel<T> {
                 "model": self.model,
                 "messages": full_history,
                 "tools": completion_request.tools.into_iter().map(ToolDefinition::from).collect::<Vec<_>>(),
-                "tool_choice": tool_choice,
             })
+        };
+
+        let request = if let Some(tool_choice) = completion_request.tool_choice {
+            let tool_choice = ToolChoice::try_from(tool_choice)?;
+            json_utils::merge(request, json!({"tool_choice": tool_choice}))
+        } else {
+            request
         };
 
         let request = if let Some(temperature) = completion_request.temperature {
