@@ -6,16 +6,16 @@ use super::audio_generation::AudioGenerationClientDyn;
 use super::image_generation::ImageGenerationClientDyn;
 #[allow(deprecated)]
 #[cfg(feature = "audio")]
-use crate::audio_generation::AudioGenerationModelDyn;
+use crate::audio_generation::{AudioGenerationModel, AudioGenerationModelDyn};
 #[cfg(feature = "image")]
 #[allow(deprecated)]
-use crate::image_generation::ImageGenerationModelDyn;
+use crate::image_generation::{ImageGenerationModel, ImageGenerationModelDyn};
 #[allow(deprecated)]
 use crate::{
     OneOrMany,
     agent::AgentBuilder,
     client::{
-        Capabilities, Capability, Client, FinalCompletionResponse, Provider, ProviderClient,
+        Capabilities, Client, FinalCompletionResponse, ProviderClient,
         completion::{CompletionClientDyn, CompletionModelHandle},
         embeddings::EmbeddingsClientDyn,
         transcription::TranscriptionClientDyn,
@@ -29,9 +29,15 @@ use crate::{
     },
     streaming::StreamingCompletionResponse,
     transcription::TranscriptionModelDyn,
-    wasm_compat::{WasmCompatSend, WasmCompatSync},
+    wasm_compat::WasmCompatSend,
 };
-use std::{any::Any, collections::HashMap};
+use crate::{
+    completion::CompletionModel, embeddings::EmbeddingModel, transcription::TranscriptionModel,
+};
+use delegate::delegate;
+use disjoint_impls::disjoint_impls;
+use kinded::Kinded;
+use std::collections::HashMap;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -43,110 +49,238 @@ pub enum Error {
     Completion(#[from] CompletionError),
 }
 
-#[deprecated(
-    since = "0.25.0",
-    note = "`DynClientBuilder` and related features have been deprecated and will be removed in a future release."
-)]
-pub struct AnyClient {
-    client: Box<dyn Any + 'static>,
-    vtable: AnyClientVTable,
+disjoint_impls! {
+    #[allow(deprecated)]
+    pub trait CompletionInflector {
+        fn as_completion(&self) -> Option<&dyn CompletionClientDyn>;
+    }
+
+    #[allow(deprecated)]
+    impl<M, Ext, H> CompletionInflector for Client<Ext, H>
+    where
+        Ext: Capabilities<H, Completion = super::Capable<M>>,
+        M: CompletionModel<Client = Self> + 'static,
+    {
+        fn as_completion(&self) -> Option<&dyn CompletionClientDyn> {
+            Some(self as &dyn CompletionClientDyn)
+        }
+    }
+    #[allow(deprecated)]
+    impl<Ext, H> CompletionInflector for Client<Ext, H>
+    where
+        Ext: Capabilities<H, Completion = super::Nothing>,
+    {
+        fn as_completion(&self) -> Option<&dyn CompletionClientDyn> {
+            None
+        }
+    }
 }
 
-struct AnyClientVTable {
+disjoint_impls! {
     #[allow(deprecated)]
-    as_completion: fn(&dyn Any) -> Option<&&dyn CompletionClientDyn>,
+    pub trait EmbeddingsInflector {
+        fn as_embedding(&self) -> Option<&dyn EmbeddingsClientDyn>;
+    }
+
     #[allow(deprecated)]
-    as_embedding: fn(&dyn Any) -> Option<&&dyn EmbeddingsClientDyn>,
+    impl<M, Ext, H> EmbeddingsInflector for Client<Ext, H>
+    where
+        Ext: Capabilities<H, Embeddings = super::Capable<M>>,
+        M: EmbeddingModel<Client = Self> + 'static,
+    {
+        fn as_embedding(&self) -> Option<&dyn EmbeddingsClientDyn> {
+            Some(self as &dyn EmbeddingsClientDyn)
+        }
+    }
+
     #[allow(deprecated)]
-    as_transcription: fn(&dyn Any) -> Option<&&dyn TranscriptionClientDyn>,
+    impl<Ext, H> EmbeddingsInflector for Client<Ext, H>
+    where
+        Ext: Capabilities<H, Embeddings = super::Nothing>,
+    {
+        fn as_embedding(&self) -> Option<&dyn EmbeddingsClientDyn> {
+            None
+        }
+    }
+}
+
+disjoint_impls! {
     #[allow(deprecated)]
-    #[cfg(feature = "image")]
-    as_image_generation: fn(&dyn Any) -> Option<&&dyn ImageGenerationClientDyn>,
+    pub trait TranscriptionInflector {
+        fn as_transcription(&self) -> Option<&dyn TranscriptionClientDyn>;
+    }
+
     #[allow(deprecated)]
-    #[cfg(feature = "audio")]
-    as_audio_generation: fn(&dyn Any) -> Option<&&dyn AudioGenerationClientDyn>,
+    impl<M, Ext, H> TranscriptionInflector for Client<Ext, H>
+    where
+        Ext: Capabilities<H, Transcription = super::Capable<M>>,
+        M: TranscriptionModel<Client = Self> + 'static,
+    {
+        fn as_transcription(&self) -> Option<&dyn TranscriptionClientDyn> {
+            Some(self as &dyn TranscriptionClientDyn)
+        }
+    }
+
+    #[allow(deprecated)]
+    impl<Ext, H> TranscriptionInflector for Client<Ext, H>
+    where
+        Ext: Capabilities<H, Transcription = super::Nothing>,
+    {
+        fn as_transcription(&self) -> Option<&dyn TranscriptionClientDyn> {
+            None
+        }
+    }
+}
+
+#[cfg(feature = "image")]
+disjoint_impls! {
+    #[allow(deprecated)]
+    pub trait ImageGenerationInflector {
+        fn as_image_generation(&self) -> Option<&dyn ImageGenerationClientDyn>;
+    }
+
+    #[allow(deprecated)]
+    impl<M, Ext, H> ImageGenerationInflector for Client<Ext, H>
+    where
+        Ext: Capabilities<H, ImageGeneration = super::Capable<M>>,
+        M: ImageGenerationModel<Client = Self> + 'static,
+    {
+        fn as_image_generation(&self) -> Option<&dyn ImageGenerationClientDyn> {
+            Some(self as &dyn ImageGenerationClientDyn)
+        }
+    }
+
+    #[allow(deprecated)]
+    impl<Ext, H> ImageGenerationInflector for Client<Ext, H>
+    where
+        Ext: Capabilities<H, ImageGeneration = super::Nothing>,
+    {
+        fn as_image_generation(&self) -> Option<&dyn ImageGenerationClientDyn> {
+            None
+        }
+    }
+}
+// }
+
+// TODO: impls
+#[cfg(feature = "audio")]
+disjoint_impls! {
+    #[allow(deprecated)]
+    pub trait AudioGenerationInflector {
+        fn as_audio_generation(&self) -> Option<&dyn AudioGenerationClientDyn>;
+    }
+
+    #[allow(deprecated)]
+    impl<M, Ext, H> AudioGenerationInflector for Client<Ext, H>
+    where
+        Ext: Capabilities<H, AudioGeneration = super::Capable<M>>,
+        M: AudioGenerationModel<Client = Self> + 'static,
+    {
+        fn as_audio_generation(&self) -> Option<&dyn AudioGenerationClientDyn> {
+            Some(self as &dyn AudioGenerationClientDyn)
+        }
+    }
+
+    #[allow(deprecated)]
+    impl<Ext, H> AudioGenerationInflector for Client<Ext, H>
+    where
+        Ext: Capabilities<H, AudioGeneration = super::Nothing>,
+    {
+        fn as_audio_generation(&self) -> Option<&dyn AudioGenerationClientDyn> {
+            None
+        }
+    }
+}
+
+#[derive(Kinded)]
+#[kinded(kind=Provider, derive(Debug))]
+pub enum AnyClient {
+    Anthropic(anthropic::Client),
+    Cohere(cohere::Client),
+    Gemini(gemini::Client),
+    HuggingFace(huggingface::Client),
+    OpenAI(openai::Client),
+    OpenRouter(openrouter::Client),
+    Together(together::Client),
+    XAI(xai::Client),
+    Azure(azure::Client),
+    DeepSeek(deepseek::Client),
+    Galadriel(galadriel::Client),
+    Groq(groq::Client),
+    Hyperbolic(hyperbolic::Client),
+    Moonshot(moonshot::Client),
+    Mira(mira::Client),
+    Mistral(mistral::Client),
+    Ollama(ollama::Client),
+    Perplexity(perplexity::Client),
+}
+
+impl Provider {
+    pub fn from_env(&self) -> AnyClient {
+        use AnyClient::*;
+        match self {
+            Provider::Anthropic => Anthropic(anthropic::Client::from_env()),
+            Provider::Cohere => Cohere(cohere::Client::from_env()),
+            Provider::Gemini => Gemini(gemini::Client::from_env()),
+            Provider::HuggingFace => HuggingFace(huggingface::Client::from_env()),
+            Provider::OpenAI => OpenAI(openai::Client::from_env()),
+            Provider::OpenRouter => OpenRouter(openrouter::Client::from_env()),
+            Provider::Together => Together(together::Client::from_env()),
+            Provider::XAI => XAI(xai::Client::from_env()),
+            Provider::Azure => Azure(azure::Client::from_env()),
+            Provider::DeepSeek => DeepSeek(deepseek::Client::from_env()),
+            Provider::Galadriel => Galadriel(galadriel::Client::from_env()),
+            Provider::Groq => Groq(groq::Client::from_env()),
+            Provider::Hyperbolic => Hyperbolic(hyperbolic::Client::from_env()),
+            Provider::Moonshot => Moonshot(moonshot::Client::from_env()),
+            Provider::Mira => Mira(mira::Client::from_env()),
+            Provider::Mistral => Mistral(mistral::Client::from_env()),
+            Provider::Ollama => Ollama(ollama::Client::from_env()),
+            Provider::Perplexity => Perplexity(perplexity::Client::from_env()),
+        }
+    }
 }
 
 #[allow(deprecated)]
 impl AnyClient {
-    pub fn new<Ext, H>(client: Client<Ext, H>) -> Self
-    where
-        Ext: Provider + Capabilities + WasmCompatSend + WasmCompatSync + 'static,
-        H: WasmCompatSend + WasmCompatSync + 'static,
-        Client<Ext, H>: WasmCompatSend + WasmCompatSync + 'static,
-    {
-        Self {
-            client: Box::new(client),
-            vtable: AnyClientVTable {
-                as_completion: if <<Ext as Capabilities>::Completion as Capability>::CAPABLE {
-                    |any| any.downcast_ref()
-                } else {
-                    |_| None
-                },
+    delegate! {
+        to match self {
+            AnyClient::Anthropic(client) => client,
+            AnyClient::Cohere(client) => client,
+            AnyClient::Gemini(client) => client,
+            AnyClient::HuggingFace(client) => client,
+            AnyClient::OpenAI(client) => client,
+            AnyClient::OpenRouter(client) => client,
+            AnyClient::Together(client) => client,
+            AnyClient::XAI(client) => client,
+            AnyClient::Azure(client) => client,
+            AnyClient::DeepSeek(client) => client,
+            AnyClient::Galadriel(client) => client,
+            AnyClient::Groq(client) => client,
+            AnyClient::Hyperbolic(client) => client,
+            AnyClient::Moonshot(client) => client,
+            AnyClient::Mira(client) => client,
+            AnyClient::Mistral(client) => client,
+            AnyClient::Ollama(client) => client,
+            AnyClient::Perplexity(client) => client,
+        } {
+            pub fn as_completion(&self) -> Option<&dyn CompletionClientDyn>;
 
-                as_embedding: if <<Ext as Capabilities>::Embeddings as Capability>::CAPABLE {
-                    |any| any.downcast_ref()
-                } else {
-                    |_| None
-                },
+            pub fn as_embedding(&self) -> Option<&dyn EmbeddingsClientDyn>;
 
-                as_transcription: if <<Ext as Capabilities>::Transcription as Capability>::CAPABLE {
-                    |any| any.downcast_ref()
-                } else {
-                    |_| None
-                },
+            pub fn as_transcription(&self) -> Option<&dyn TranscriptionClientDyn>;
 
-                #[cfg(feature = "image")]
-                as_image_generation:
-                    if <<Ext as Capabilities>::ImageGeneration as Capability>::CAPABLE {
-                        |any| any.downcast_ref()
-                    } else {
-                        |_| None
-                    },
+            #[cfg(feature = "image")]
+            pub fn as_image_generation(&self) -> Option<&dyn ImageGenerationClientDyn>;
 
-                #[cfg(feature = "audio")]
-                as_audio_generation:
-                    if <<Ext as Capabilities>::AudioGeneration as Capability>::CAPABLE {
-                        |any| any.downcast_ref()
-                    } else {
-                        |_| None
-                    },
-            },
+            #[cfg(feature = "audio")]
+            pub fn as_audio_generation(&self) -> Option<&dyn AudioGenerationClientDyn>;
         }
     }
 
-    pub fn as_completion(&self) -> Option<&dyn CompletionClientDyn> {
-        (self.vtable.as_completion)(self.client.as_ref()).copied()
+    pub fn name(&self) -> String {
+        self.kind().to_string().to_lowercase()
     }
-
-    pub fn as_embedding(&self) -> Option<&dyn EmbeddingsClientDyn> {
-        (self.vtable.as_embedding)(self.client.as_ref()).copied()
-    }
-
-    pub fn as_transcription(&self) -> Option<&dyn TranscriptionClientDyn> {
-        (self.vtable.as_transcription)(self.client.as_ref()).copied()
-    }
-
-    #[cfg(feature = "image")]
-    pub fn as_image_generation(&self) -> Option<&dyn ImageGenerationClientDyn> {
-        (self.vtable.as_image_generation)(self.client.as_ref()).copied()
-    }
-
-    #[cfg(feature = "audio")]
-    pub fn as_audio_generation(&self) -> Option<&dyn AudioGenerationClientDyn> {
-        (self.vtable.as_audio_generation)(self.client.as_ref()).copied()
-    }
-}
-
-#[deprecated(
-    since = "0.25.0",
-    note = "`DynClientBuilder` and related features have been deprecated and will be removed in a future release."
-)]
-#[derive(Debug, Clone)]
-pub struct ProviderFactory {
-    /// Create a client from environment variables
-    #[allow(deprecated)]
-    from_env: fn() -> Result<AnyClient, Error>,
 }
 
 #[allow(deprecated)]
@@ -155,125 +289,13 @@ pub struct ProviderFactory {
     note = "`DynClientBuilder` and related features have been deprecated and will be removed in a future release."
 )]
 #[derive(Debug, Clone)]
-pub struct DynClientBuilder(HashMap<String, ProviderFactory>);
+pub struct DynClientBuilder(HashMap<String, Provider>);
 
 #[allow(deprecated)]
 impl Default for DynClientBuilder {
     fn default() -> Self {
         // Give it a capacity ~the number of providers we have from the start
         Self(HashMap::with_capacity(32))
-    }
-}
-
-#[repr(u8)]
-#[derive(Debug, Clone, Copy)]
-pub enum DefaultProviders {
-    Anthropic,
-    Cohere,
-    Gemini,
-    HuggingFace,
-    OpenAI,
-    OpenRouter,
-    Together,
-    XAI,
-    Azure,
-    DeepSeek,
-    Galadriel,
-    Groq,
-    Hyperbolic,
-    Moonshot,
-    Mira,
-    Mistral,
-    Ollama,
-    Perplexity,
-}
-
-impl From<DefaultProviders> for &'static str {
-    fn from(value: DefaultProviders) -> Self {
-        use DefaultProviders::*;
-
-        match value {
-            Anthropic => "anthropic",
-            Cohere => "cohere",
-            Gemini => "gemini",
-            HuggingFace => "huggingface",
-            OpenAI => "openai",
-            OpenRouter => "openrouter",
-            Together => "together",
-            XAI => "xai",
-            Azure => "azure",
-            DeepSeek => "deepseek",
-            Galadriel => "galadriel",
-            Groq => "groq",
-            Hyperbolic => "hyperbolic",
-            Moonshot => "moonshot",
-            Mira => "mira",
-            Mistral => "mistral",
-            Ollama => "ollama",
-            Perplexity => "perplexity",
-        }
-    }
-}
-pub use DefaultProviders::*;
-
-impl std::fmt::Display for DefaultProviders {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s: &str = (*self).into();
-        f.write_str(s)
-    }
-}
-
-impl DefaultProviders {
-    fn all() -> impl Iterator<Item = Self> {
-        use DefaultProviders::*;
-
-        [
-            Anthropic,
-            Cohere,
-            Gemini,
-            HuggingFace,
-            OpenAI,
-            OpenRouter,
-            Together,
-            XAI,
-            Azure,
-            DeepSeek,
-            Galadriel,
-            Groq,
-            Hyperbolic,
-            Moonshot,
-            Mira,
-            Mistral,
-            Ollama,
-            Perplexity,
-        ]
-        .into_iter()
-    }
-
-    #[allow(deprecated)]
-    fn get_env_fn(self) -> fn() -> Result<AnyClient, Error> {
-        use DefaultProviders::*;
-
-        match self {
-            Anthropic => || Ok(AnyClient::new(anthropic::Client::from_env())),
-            Cohere => || Ok(AnyClient::new(cohere::Client::from_env())),
-            Gemini => || Ok(AnyClient::new(gemini::Client::from_env())),
-            HuggingFace => || Ok(AnyClient::new(huggingface::Client::from_env())),
-            OpenAI => || Ok(AnyClient::new(openai::Client::from_env())),
-            OpenRouter => || Ok(AnyClient::new(openrouter::Client::from_env())),
-            Together => || Ok(AnyClient::new(together::Client::from_env())),
-            XAI => || Ok(AnyClient::new(xai::Client::from_env())),
-            Azure => || Ok(AnyClient::new(azure::Client::from_env())),
-            DeepSeek => || Ok(AnyClient::new(deepseek::Client::from_env())),
-            Galadriel => || Ok(AnyClient::new(galadriel::Client::from_env())),
-            Groq => || Ok(AnyClient::new(groq::Client::from_env())),
-            Hyperbolic => || Ok(AnyClient::new(hyperbolic::Client::from_env())),
-            Moonshot => || Ok(AnyClient::new(moonshot::Client::from_env())),
-            Mira => || Ok(AnyClient::new(mira::Client::from_env())),
-            Mistral => || Ok(AnyClient::new(mistral::Client::from_env())),
-            Ollama => || Ok(AnyClient::new(ollama::Client::from_env())),
-            Perplexity => || Ok(AnyClient::new(perplexity::Client::from_env())),
-        }
     }
 }
 
@@ -284,36 +306,10 @@ impl DynClientBuilder {
     }
 
     fn register_all(mut self) -> Self {
-        for provider in DefaultProviders::all() {
-            let from_env = provider.get_env_fn();
+        for provider in Provider::all() {
             self.0
-                .insert(provider.to_string(), ProviderFactory { from_env });
+                .insert(provider.to_string().to_lowercase(), *provider);
         }
-
-        self
-    }
-
-    fn to_key<Models>(provider_name: &'static str, model: &Models) -> String
-    where
-        Models: ToString,
-    {
-        format!("{provider_name}:{}", model.to_string())
-    }
-
-    pub fn register<Ext, H, Models>(mut self, provider_name: &'static str, model: Models) -> Self
-    where
-        Ext: Provider + Capabilities + WasmCompatSend + WasmCompatSync + 'static,
-        H: Default + WasmCompatSend + WasmCompatSync + 'static,
-        Client<Ext, H>: ProviderClient + WasmCompatSend + WasmCompatSync + 'static,
-        Models: ToString,
-    {
-        let key = Self::to_key(provider_name, &model);
-
-        let factory = ProviderFactory {
-            from_env: || Ok(AnyClient::new(Client::<Ext, H>::from_env())),
-        };
-
-        self.0.insert(key, factory);
 
         self
     }
@@ -321,31 +317,16 @@ impl DynClientBuilder {
     pub fn from_env<T, Models>(
         &self,
         provider_name: &'static str,
-        model: Models,
+        _model: Models,
     ) -> Result<AnyClient, Error>
     where
         T: 'static,
         Models: ToString,
     {
-        let key = Self::to_key(provider_name, &model);
-
         self.0
-            .get(&key)
-            .ok_or(Error::NotFound(key))
-            .and_then(|factory| (factory.from_env)())
-    }
-
-    pub fn factory<Models>(
-        &self,
-        provider_name: &'static str,
-        model: Models,
-    ) -> Option<&ProviderFactory>
-    where
-        Models: ToString,
-    {
-        let key = Self::to_key(provider_name, &model);
-
-        self.0.get(&key)
+            .get(provider_name)
+            .ok_or_else(|| Error::NotFound(provider_name.into()))
+            .map(|kind| kind.from_env())
     }
 
     /// Get a boxed agent based on the provider and model, as well as an API key.
@@ -357,16 +338,16 @@ impl DynClientBuilder {
     where
         Models: ToString,
     {
-        let key = Self::to_key(provider_name.into(), &model);
+        let provider_name = provider_name.into();
 
         let client = self
             .0
-            .get(&key)
-            .ok_or_else(|| Error::NotFound(key.clone()))
-            .and_then(|factory| (factory.from_env)())?;
+            .get(provider_name)
+            .ok_or_else(|| Error::NotFound(provider_name.into()))
+            .map(|kind| kind.from_env())?;
 
         let completion = client.as_completion().ok_or(Error::NotCapable {
-            provider: key,
+            provider: provider_name.into(),
             role: "Completion".into(),
         })?;
 
@@ -382,17 +363,15 @@ impl DynClientBuilder {
     where
         Models: ToString,
     {
-        let key = Self::to_key(provider_name, &model);
-
         let client = self
             .0
-            .get(&key)
-            .ok_or_else(|| Error::NotFound(key.clone()))
-            .and_then(|factory| (factory.from_env)())?;
+            .get(provider_name)
+            .ok_or_else(|| Error::NotFound(provider_name.into()))
+            .map(|kind| kind.from_env())?;
 
         let completion = client.as_completion().ok_or(Error::NotCapable {
-            provider: key,
-            role: "Embedding Model".into(),
+            provider: provider_name.into(),
+            role: "Completion Model".into(),
         })?;
 
         Ok(completion.completion_model(&model.to_string()))
@@ -407,16 +386,14 @@ impl DynClientBuilder {
     where
         Models: ToString,
     {
-        let key = Self::to_key(provider_name, &model);
-
         let client = self
             .0
-            .get(&key)
-            .ok_or_else(|| Error::NotFound(key.clone()))
-            .and_then(|factory| (factory.from_env)())?;
+            .get(provider_name)
+            .ok_or_else(|| Error::NotFound(provider_name.into()))
+            .map(|kind| kind.from_env())?;
 
         let embeddings = client.as_embedding().ok_or(Error::NotCapable {
-            provider: key,
+            provider: provider_name.into(),
             role: "Embedding Model".into(),
         })?;
 
@@ -432,16 +409,14 @@ impl DynClientBuilder {
     where
         Models: ToString,
     {
-        let key = Self::to_key(provider_name, &model);
-
         let client = self
             .0
-            .get(&key)
-            .ok_or_else(|| Error::NotFound(key.clone()))
-            .and_then(|factory| (factory.from_env)())?;
+            .get(provider_name)
+            .ok_or_else(|| Error::NotFound(provider_name.into()))
+            .map(|kind| kind.from_env())?;
 
         let transcription = client.as_transcription().ok_or(Error::NotCapable {
-            provider: key,
+            provider: provider_name.into(),
             role: "transcription model".into(),
         })?;
 
@@ -457,16 +432,14 @@ impl DynClientBuilder {
     where
         Models: ToString,
     {
-        let key = Self::to_key(provider_name, &model);
-
         let client = self
             .0
-            .get(&key)
-            .ok_or_else(|| Error::NotFound(key.clone()))
-            .and_then(|factory| (factory.from_env)())?;
+            .get(provider_name)
+            .ok_or_else(|| Error::NotFound(provider_name.into()))
+            .map(|kind| kind.from_env())?;
 
         let image_generation = client.as_image_generation().ok_or(Error::NotCapable {
-            provider: key,
+            provider: provider_name.into(),
             role: "Image generation".into(),
         })?;
 
@@ -487,8 +460,9 @@ impl DynClientBuilder {
         let client = self
             .0
             .get(&key)
+            .or(self.0.get(provider_name))
             .ok_or_else(|| Error::NotFound(key.clone()))
-            .and_then(|factory| (factory.from_env)())?;
+            .map(|kind| kind.from_env())?;
 
         let audio_generation = client.as_audio_generation().ok_or(Error::NotCapable {
             provider: key,
