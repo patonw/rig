@@ -1,16 +1,13 @@
-#[allow(deprecated)]
+#![cfg(feature = "dynclient")]
+#![allow(deprecated)]
 #[cfg(feature = "audio")]
 use super::audio_generation::AudioGenerationClientDyn;
 #[cfg(feature = "image")]
-#[allow(deprecated)]
 use super::image_generation::ImageGenerationClientDyn;
-#[allow(deprecated)]
 #[cfg(feature = "audio")]
 use crate::audio_generation::{AudioGenerationModel, AudioGenerationModelDyn};
 #[cfg(feature = "image")]
-#[allow(deprecated)]
 use crate::image_generation::{ImageGenerationModel, ImageGenerationModelDyn};
-#[allow(deprecated)]
 use crate::{
     OneOrMany,
     agent::AgentBuilder,
@@ -50,12 +47,10 @@ pub enum Error {
 }
 
 disjoint_impls! {
-    #[allow(deprecated)]
     pub trait CompletionInflector {
         fn as_completion(&self) -> Option<&dyn CompletionClientDyn>;
     }
 
-    #[allow(deprecated)]
     impl<M, Ext, H> CompletionInflector for Client<Ext, H>
     where
         Ext: Capabilities<H, Completion = super::Capable<M>>,
@@ -65,7 +60,6 @@ disjoint_impls! {
             Some(self as &dyn CompletionClientDyn)
         }
     }
-    #[allow(deprecated)]
     impl<Ext, H> CompletionInflector for Client<Ext, H>
     where
         Ext: Capabilities<H, Completion = super::Nothing>,
@@ -77,12 +71,10 @@ disjoint_impls! {
 }
 
 disjoint_impls! {
-    #[allow(deprecated)]
     pub trait EmbeddingsInflector {
         fn as_embedding(&self) -> Option<&dyn EmbeddingsClientDyn>;
     }
 
-    #[allow(deprecated)]
     impl<M, Ext, H> EmbeddingsInflector for Client<Ext, H>
     where
         Ext: Capabilities<H, Embeddings = super::Capable<M>>,
@@ -93,7 +85,6 @@ disjoint_impls! {
         }
     }
 
-    #[allow(deprecated)]
     impl<Ext, H> EmbeddingsInflector for Client<Ext, H>
     where
         Ext: Capabilities<H, Embeddings = super::Nothing>,
@@ -105,12 +96,10 @@ disjoint_impls! {
 }
 
 disjoint_impls! {
-    #[allow(deprecated)]
     pub trait TranscriptionInflector {
         fn as_transcription(&self) -> Option<&dyn TranscriptionClientDyn>;
     }
 
-    #[allow(deprecated)]
     impl<M, Ext, H> TranscriptionInflector for Client<Ext, H>
     where
         Ext: Capabilities<H, Transcription = super::Capable<M>>,
@@ -121,7 +110,6 @@ disjoint_impls! {
         }
     }
 
-    #[allow(deprecated)]
     impl<Ext, H> TranscriptionInflector for Client<Ext, H>
     where
         Ext: Capabilities<H, Transcription = super::Nothing>,
@@ -134,12 +122,10 @@ disjoint_impls! {
 
 #[cfg(feature = "image")]
 disjoint_impls! {
-    #[allow(deprecated)]
     pub trait ImageGenerationInflector {
         fn as_image_generation(&self) -> Option<&dyn ImageGenerationClientDyn>;
     }
 
-    #[allow(deprecated)]
     impl<M, Ext, H> ImageGenerationInflector for Client<Ext, H>
     where
         Ext: Capabilities<H, ImageGeneration = super::Capable<M>>,
@@ -150,7 +136,6 @@ disjoint_impls! {
         }
     }
 
-    #[allow(deprecated)]
     impl<Ext, H> ImageGenerationInflector for Client<Ext, H>
     where
         Ext: Capabilities<H, ImageGeneration = super::Nothing>,
@@ -165,12 +150,10 @@ disjoint_impls! {
 // TODO: impls
 #[cfg(feature = "audio")]
 disjoint_impls! {
-    #[allow(deprecated)]
     pub trait AudioGenerationInflector {
         fn as_audio_generation(&self) -> Option<&dyn AudioGenerationClientDyn>;
     }
 
-    #[allow(deprecated)]
     impl<M, Ext, H> AudioGenerationInflector for Client<Ext, H>
     where
         Ext: Capabilities<H, AudioGeneration = super::Capable<M>>,
@@ -181,7 +164,6 @@ disjoint_impls! {
         }
     }
 
-    #[allow(deprecated)]
     impl<Ext, H> AudioGenerationInflector for Client<Ext, H>
     where
         Ext: Capabilities<H, AudioGeneration = super::Nothing>,
@@ -241,7 +223,6 @@ impl Provider {
     }
 }
 
-#[allow(deprecated)]
 impl AnyClient {
     delegate! {
         to match self {
@@ -291,7 +272,6 @@ impl AnyClient {
 #[derive(Debug, Clone)]
 pub struct DynClientBuilder(HashMap<String, Provider>);
 
-#[allow(deprecated)]
 impl Default for DynClientBuilder {
     fn default() -> Self {
         // Give it a capacity ~the number of providers we have from the start
@@ -299,7 +279,6 @@ impl Default for DynClientBuilder {
     }
 }
 
-#[allow(deprecated)]
 impl DynClientBuilder {
     pub fn new() -> Self {
         Self::default().register_all()
@@ -455,17 +434,14 @@ impl DynClientBuilder {
     where
         Models: ToString,
     {
-        let key = Self::to_key(provider_name, &model);
-
         let client = self
             .0
-            .get(&key)
-            .or(self.0.get(provider_name))
-            .ok_or_else(|| Error::NotFound(key.clone()))
+            .get(provider_name)
+            .ok_or_else(|| Error::NotFound(provider_name.into()))
             .map(|kind| kind.from_env())?;
 
         let audio_generation = client.as_audio_generation().ok_or(Error::NotCapable {
-            provider: key,
+            provider: provider_name.into(),
             role: "Image generation".into(),
         })?;
 
