@@ -283,7 +283,8 @@ pub mod rmcp {
             Box::pin(async move {
                 let result = self
                     .client
-                    .call_tool(rmcp::model::CallToolRequestParam {
+                    .call_tool(rmcp::model::CallToolRequestParams {
+                        meta: None,
                         name,
                         arguments,
                         task: None,
